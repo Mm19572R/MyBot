@@ -37,24 +37,41 @@ async def download_tiktok_video(url):
 
 @dp.message_handler()
 async def handle_message(message: types.Message):
+    # 1. Handle the /start command FIRST
+    if message.text == "/start":
+        await message.reply("Welcome! Send me a TikTok link and I'll download it for you.")
+        return  # Stop here
+
+    # 2. Look for a TikTok link
     match = re.search(r'(https?://(?:www\.|vm\.|vt\.)?tiktok\.com/[^\s]+)', message.text)
+    
     if match:
         tiktok_url = match.group(0)
+        
+        # Send "Typing..." action and status message
         await message.answer_chat_action("upload_video")
-        status_msg = await message.reply("⏳ <b>Downloading...</b>", parse_mode="HTML")
+        status_msg = await message.reply("<b>Wait a second...</b>", parse_mode="HTML")
 
-        video_file = await download_tiktok_video(tiktok_url)
+        try:
+            video_file = await download_tiktok_video(tiktok_url)
 
-        if video_file:
-            try:
-                # sending the video
-                await message.reply_video(video=video_file, caption="✅ Done")
+            if video_file:
+                await message.reply_video(video=video_file, caption="✅ Done!")
                 await status_msg.delete()
-            except Exception as e:
-                await status_msg.edit_text(f"❌ Upload Error: {e}")
-        else:
-            await status_msg.edit_text("❌ Could not download video. API might be busy.")
+            else:
+                await status_msg.edit_text("❌ Could not get video details. The API might be busy.")
+                
+        except Exception as e:
+            # Check if it was a file size error (common with free bots)
+            if "File is too big" in str(e):
+                await status_msg.edit_text("❌ File is too big for this bot to upload.")
+            else:
+                await status_msg.edit_text(f"❌ Error: {e}")
 
+    # 3. If it's NOT /start and NOT a link, send the error helper
+    else:
+        await message.reply("That doesn't look like a TikTok link.\nPlease send a valid link")
+        
 async def health_check(request):
     return web.Response(text="I am alive!", status=200)
 
@@ -72,4 +89,5 @@ async def on_startup(dp):
     print("🤖 Bot started with Web Server!")
 
 if __name__ == "__main__":
+
     executor.start_polling(dp, on_startup=on_startup, skip_updates=True)
