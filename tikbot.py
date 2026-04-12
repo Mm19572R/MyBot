@@ -17,22 +17,30 @@ logging.basicConfig(level=logging.INFO)
 bot = Bot(token=TOKEN)
 dp = Dispatcher(bot)
 
+# Global session to prevent memory leaks
+session = None
+
+async def get_session():
+    global session
+    if session is None or session.closed:
+        session = aiohttp.ClientSession()
+    return session
+
 async def download_tiktok_video(url):
-    async with aiohttp.ClientSession() as session:
-        try:
-            params = {"url": url, "hd": 1}
-            async with session.get(API_URL, params=params) as response:
-                if response.status != 200: return None
-                data = await response.json()
+    sess = await get_session()
+    try:
+        async with sess.get(API_URL, params={"url": url, "hd": 1}, timeout=30) as response:
+            if response.status != 200: return None
+            data = await response.json()
 
-            if "data" not in data or "play" not in data["data"]: return None
-            video_url = data["data"]["play"]
+        if "data" not in data or "play" not in data["data"]: return None
+        video_url = data["data"]["play"]
 
-            async with session.get(video_url) as video_response:
-                if video_response.status == 200:
-                    return BytesIO(await video_response.read())
-        except Exception as e:
-            logging.error(f"Download Error: {e}")
+        async with sess.get(video_url, timeout=60) as video_response:
+            if video_response.status == 200:
+                return BytesIO(await video_response.read())
+    except Exception as e:
+        logging.error(f"Download Error: {e}")
     return None
 
 @dp.message_handler()
@@ -52,6 +60,7 @@ async def handle_message(message: types.Message):
         await message.answer_chat_action("upload_video")
         status_msg = await message.reply("<b>Wait a second...</b>", parse_mode="HTML")
 
+        video_file = None
         try:
             video_file = await download_tiktok_video(tiktok_url)
 
@@ -67,6 +76,10 @@ async def handle_message(message: types.Message):
                 await status_msg.edit_text("❌ File is too big for this bot to upload.")
             else:
                 await status_msg.edit_text(f"❌ Error: {e}")
+        finally:
+            # ALWAYS clear the memory
+            if video_file:
+                video_file.close()
 
     # 3. If it's NOT /start and NOT a link, send the error helper
     else:
@@ -88,6 +101,11 @@ async def on_startup(dp):
     await start_web_server()
     print("🤖 Bot started with Web Server!")
 
-if __name__ == "__main__":
+async def on_shutdown(dp):
+    global session
+    if session and not session.closed:
+        await session.close()
+    print("💤 Bot shutting down cleanly.")
 
-    executor.start_polling(dp, on_startup=on_startup, skip_updates=True)
+if __name__ == "__main__":
+    executor.start_polling(dp, on_startup=on_startup, on_shutdown=on_shutdown, skip_updates=True)
