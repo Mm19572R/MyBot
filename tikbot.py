@@ -30,15 +30,27 @@ async def download_tiktok_video(url):
     sess = await get_session()
     try:
         async with sess.get(API_URL, params={"url": url, "hd": 1}, timeout=30) as response:
-            if response.status != 200: return None
+            if response.status != 200: 
+                logging.error(f"API gave a bad status code: {response.status}")
+                return None
+            
             data = await response.json()
 
-        if "data" not in data or "play" not in data["data"]: return None
+        # LOG THE DATA TO SEE THE REAL ERROR
+        logging.info(f"API Response: {data}")
+
+        if "data" not in data or "play" not in data["data"]: 
+            logging.error("Missing 'data' or 'play' keys in API response!")
+            return None
+            
         video_url = data["data"]["play"]
 
         async with sess.get(video_url, timeout=60) as video_response:
             if video_response.status == 200:
                 return BytesIO(await video_response.read())
+            else:
+                logging.error(f"Failed to download the actual MP4. Status: {video_response.status}")
+                
     except Exception as e:
         logging.error(f"Download Error: {e}")
     return None
