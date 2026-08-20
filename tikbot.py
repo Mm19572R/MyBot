@@ -29,33 +29,43 @@ async def get_session():
 async def download_tiktok_video(url):
     sess = await get_session()
     try:
-        # We put the headers right here, before making any requests!
+        # Swapped to the Cobalt API
+        api_url = "https://api.cobalt.tools/api/json"
+        
         headers = {
+            "Accept": "application/json",
+            "Content-Type": "application/json",
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         }
         
-        # Notice headers=headers is now inside this sess.get line
-        async with sess.get(API_URL, params={"url": url, "hd": 1}, headers=headers, timeout=30) as response:
+        # Cobalt requires the URL to be sent as JSON data
+        payload = {
+            "url": url
+        }
+        
+        # We use sess.post() here instead of sess.get()
+        async with sess.post(api_url, json=payload, headers=headers, timeout=30) as response:
             if response.status != 200: 
-                logging.error(f"API gave a bad status code: {response.status}")
+                logging.error(f"Cobalt API blocked us: {response.status}")
                 return None
             
             data = await response.json()
 
-        logging.info(f"API Response: {data}")
+        logging.info(f"Cobalt Response: {data}")
 
-        if "data" not in data or "play" not in data["data"]: 
-            logging.error("Missing 'data' or 'play' keys in API response!")
+        # Cobalt puts the direct video link in the 'url' key
+        if "url" not in data: 
+            logging.error("No video link found in the Cobalt response!")
             return None
             
-        video_url = data["data"]["play"]
+        video_url = data["url"]
 
-        # We also pass the headers to the final video download link just in case
+        # Download the actual video file
         async with sess.get(video_url, headers=headers, timeout=60) as video_response:
             if video_response.status == 200:
                 return BytesIO(await video_response.read())
             else:
-                logging.error(f"Failed to download the actual MP4. Status: {video_response.status}")
+                logging.error(f"Failed to download the MP4. Status: {video_response.status}")
                 
     except Exception as e:
         logging.error(f"Download Error: {e}")
